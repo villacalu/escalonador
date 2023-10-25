@@ -1,19 +1,19 @@
 "use client";
 
 import { useResults } from "@/contexts/results";
-import { processosBasicos } from "@/processos";
-import { Process } from "@/types";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { processosBasicos, sortByDuration } from "@/processos";
+import { useEffect, useMemo, useState } from "react";
 import { ProgressBar } from "../progress";
 
+const processes = sortByDuration(processosBasicos());
+
+// Não preemptivo, não há troca de contexto
 export const Sjf = () => {
   const [time, setTime] = useState(0); // Tempo atual
-  const processes = useMemo(
-    () => processosBasicos().sort((a, b) => a.arrivalTime - b.arrivalTime),
-    []
-  );
+
   const { setResults } = useResults();
   const [tempoDeEsperaTotal, setTempoDeEsperaTotal] = useState(0);
+  const [currentProcess, setCurrentProcess] = useState<number | null>(null);
 
   const finish = () => {
     setResults((results) => ({
@@ -27,9 +27,24 @@ export const Sjf = () => {
     }));
   };
 
-  // Função que atualiza o tempo e o progresso dos processos
+  const nextProcess = useMemo(() => {
+    const process = processes.find(
+      (process) =>
+        process.arrivalTime <= time && process.progress < process.duration
+    );
+
+    if (!process) {
+      return null;
+    }
+
+    return process.id;
+  }, [time]);
+
   useEffect(() => {
-    // Intervalo de 1 segundo
+    if (currentProcess === null) {
+      setCurrentProcess(nextProcess);
+    }
+
     const interval = setInterval(() => {
       // Verifica se todos os processos foram concluídos
       if (processes.every((process) => process.progress === process.duration)) {
@@ -40,23 +55,23 @@ export const Sjf = () => {
 
       setTime((time) => time + 1);
 
-      const firstProcess = processes.find(
-        (process) =>
-          process.arrivalTime <= time && process.progress < process.duration
-      );
+      if (currentProcess !== null) {
+        const process = processes.find((p) => p.id === currentProcess);
 
-      if (firstProcess) {
-        firstProcess.progress++;
-        if (firstProcess.duration === firstProcess.progress) {
-          const esperaTotal =
-            time - firstProcess.arrivalTime - firstProcess.duration + 1;
-          setTempoDeEsperaTotal((prev) => prev + esperaTotal);
+        if (process) {
+          process.progress++;
+          if (process.duration === process.progress) {
+            const esperaTotal =
+              time - process.arrivalTime - process.duration + 1;
+            setTempoDeEsperaTotal((prev) => prev + esperaTotal);
+            setCurrentProcess(null);
+          }
         }
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [time]);
+  }, [time, currentProcess]);
 
   // Ordena os processos por id, sem atrapalhar a order da fila
   const derivedProcesses = processes.map((p) => p);
